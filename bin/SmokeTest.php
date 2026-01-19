@@ -13,7 +13,7 @@
  *   --timeout=10                  HTTP timeout in seconds (default: 10)
  *   --max-wait=15                 Max wait (seconds) for expected message on /sub/* (default: 15)
  *   --max-requests=500            Max /sub/* requests per channel while draining buffer (default: 500)
- *   --callerid-number="74952293043" Phone number for ConnectorDB::getCallerId test
+ *   --callerid-number="74952293042" Phone number for ConnectorDB::getCallerId test
  */
 
 declare(strict_types=1);
@@ -206,7 +206,7 @@ $channels = array_values(array_filter(array_map('trim', explode(',', $channelsRa
     return $v !== '';
 }));
 
-$callerIdNumber = $args['callerid-number'] ?? '74952293043';
+$callerIdNumber = $args['callerid-number'] ?? '74952293042';
 
 $failed = false;
 

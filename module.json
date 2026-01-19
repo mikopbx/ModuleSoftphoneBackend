@@ -1,0 +1,8 @@
+{
+  "developer": "MIKO",
+  "moduleUniqueID": "ModuleSoftphoneBackend",
+  "support_email": "help@miko.ru",
+  "version": "%ModuleVersion%",
+  "min_pbx_version": "2022.2.1"
+}
+

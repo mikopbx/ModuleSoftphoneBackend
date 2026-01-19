@@ -1,0 +1,16 @@
+{
+  "name": "miko/module-softphone-backend",
+  "description": "Softphone Backend REST API with JWT authentication for MikoPBX",
+  "type": "library",
+  "require": {
+    "php": ">=7.4.6",
+    "ext-json": "*",
+    "ext-openssl": "*"
+  },
+  "autoload": {
+    "psr-4": {
+      "Modules\\ModuleSoftphoneBackend\\": ""
+    }
+  }
+}
+

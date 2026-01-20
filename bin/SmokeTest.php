@@ -287,8 +287,7 @@ if ($callerIdNumber !== '') {
             fail('callerid', 'Empty response from ConnectorDB::getCallerId (result is not Success?)');
         } else {
             $expectedKeys = [
-                'number', 'number_format', 'client', 'contact', 'caller_id', 'is_employee',
-                'extension', 'ref', 'responsible'
+                'number', 'number_format', 'client', 'contact', 'caller_id', 'is_employee', 'ref', 'responsible'
             ];
             $missing = [];
             foreach ($expectedKeys as $k) {

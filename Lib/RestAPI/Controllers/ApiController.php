@@ -12,6 +12,7 @@ namespace Modules\ModuleSoftphoneBackend\Lib\RestAPI\Controllers;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use MikoPBX\Common\Models\Extensions;
+use MikoPBX\Common\Models\PbxSettings;
 use MikoPBX\Common\Models\Sip;
 use MikoPBX\Common\Providers\LoggerProvider;
 use MikoPBX\Core\System\Util;
@@ -119,6 +120,8 @@ class ApiController extends ModulesControllerBase
             $this->sendErrorResponse(500, 'Internal server error'.$e->getMessage());
         }
     }
+
+
 
     public function createLoginResponse($userId = '1', string $username = 'admin'): array
     {
@@ -438,6 +441,29 @@ class ApiController extends ModulesControllerBase
             'success' => true,
             'status' => 'ok',
             'timestamp' => time()
+        ];
+
+        $this->sendResponse($response);
+    }
+
+    public function getFeatures(): void
+    {
+        $this->initialize();
+        $headers = $this->getAuthorizationHeaders();
+
+        if (!$this->authProvider->authenticate($headers)) {
+            $this->sendErrorResponse(401, 'Unauthorized');
+            return;
+        }
+
+        $response = [
+            'success' => true,
+            'message' => 'Logged out successfully',
+            'data' => [
+                'PBX_FEATURE_PICKUP_EXTEN'      => PbxSettings::getValueByKey('PBXFeaturePickupExten'),
+                'PBX_FEATURE_ATTENDED_TRANSFER' => PbxSettings::getValueByKey('PBXFeatureAttendedTransfer'),
+                'PBX_FEATURE_BLIND_TRANSFER'    => PbxSettings::getValueByKey('PBXFeatureBlindTransfer'),
+            ]
         ];
 
         $this->sendResponse($response);

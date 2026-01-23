@@ -132,6 +132,7 @@ class SoftphoneBackendConf extends ConfigClass
             [ApiController::class, 'refreshAction', '/pbxcore/api/module-softphone-backend/v1/auth/refresh', 'post', '/', true],
             
             // Public health check
+            [ApiController::class, 'getFeatures',  '/pbxcore/api/module-softphone-backend/v1/features', 'get', '/', true],
             [ApiController::class, 'healthAction', '/pbxcore/api/module-softphone-backend/v1/health', 'get', '/', true],
             [ApiController::class, 'checkMediaAccessAction', '/pbxcore/api/module-softphone-backend/v1/check-media-access', 'get', '/', true],
 

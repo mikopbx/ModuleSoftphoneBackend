@@ -276,6 +276,54 @@ if ($accessToken !== '') {
     }
 }
 
+// 2.2) Features check (GET /features) - ApiController::getFeatures
+if ($accessToken !== '') {
+    $features = httpRequest(
+        'GET',
+        $baseUrl . '/features',
+        ['Accept: application/json', 'Authorization: Bearer ' . $accessToken],
+        null,
+        $timeout
+    );
+    if ($features['err'] !== '') {
+        $failed = true;
+        fail('features', $features['err']);
+    } elseif ($features['status'] !== 200) {
+        $failed = true;
+        fail('features', "HTTP {$features['status']} body=" . trim($features['body']));
+    } else {
+        $featuresJson = tryJsonDecode($features['body']);
+        if (!is_array($featuresJson) || ($featuresJson['success'] ?? false) !== true) {
+            $failed = true;
+            fail('features', 'Invalid response: ' . trim($features['body']));
+        } else {
+            $data = $featuresJson['data'] ?? null;
+            if (!is_array($data)) {
+                $failed = true;
+                fail('features', 'Missing data object: ' . trim($features['body']));
+            } else {
+                $requiredKeys = [
+                    'PBX_FEATURE_PICKUP_EXTEN',
+                    'PBX_FEATURE_ATTENDED_TRANSFER',
+                    'PBX_FEATURE_BLIND_TRANSFER',
+                ];
+                $missing = [];
+                foreach ($requiredKeys as $k) {
+                    if (!array_key_exists($k, $data)) {
+                        $missing[] = $k;
+                    }
+                }
+                if (!empty($missing)) {
+                    $failed = true;
+                    fail('features', 'Missing keys in data: ' . implode(',', $missing));
+                } else {
+                    ok('features');
+                }
+            }
+        }
+    }
+}
+
 // 2.5) ConnectorDB::getCallerId() check
 if ($callerIdNumber !== '') {
     try {

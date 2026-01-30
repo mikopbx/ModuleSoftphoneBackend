@@ -505,6 +505,44 @@ class SoftphoneBackendConf extends ConfigClass
     }
 
     /**
+     * Generates the internal dialplan for IVR.
+     *
+     * @return string The generated internal dialplan.
+     */
+    public function extensionGenHints(): string
+    {
+        $eol = PHP_EOL;
+        return '[all_peers](+)' . $eol
+            . 'exten => *join*,1,Set(X_NUMBER=${PJSIP_HEADER(read,X-NUMBER)})' . $eol
+            . '    same => n,ExecIf($["${X_NUMBER}"=""]?Hangup(21))' . $eol
+            . '    same => n,Gosub(msb_connectedline_send,${X_NUMBER},1)' . $eol
+            . '    same => n,Set(CONNECTED_LINE_SEND_SUB=msb_connectedline_send,${X_NUMBER},1)' . $eol
+            . '    same => n,Answer()' . $eol
+            . '    same => n,ChanSpy(PJSIP/${X_NUMBER},qBS)' . $eol
+            . $eol
+
+            . 'exten => *whisper*,1,Set(X_NUMBER=${PJSIP_HEADER(read,X-NUMBER)})' . $eol
+            . '    same => n,ExecIf($["${X_NUMBER}"=""]?Hangup(21))' . $eol
+            . '    same => n,Gosub(msb_connectedline_send,${X_NUMBER},1)' . $eol
+            . '    same => n,Set(CONNECTED_LINE_SEND_SUB=msb_connectedline_send,${X_NUMBER},1)' . $eol
+            . '    same => n,Answer()' . $eol
+            . '    same => n,ChanSpy(PJSIP/${X_NUMBER},qwS)' . $eol
+            . $eol
+
+            . 'exten => *listen*,1,Set(X_NUMBER=${PJSIP_HEADER(read,X-NUMBER)})' . $eol
+            . '    same => n,ExecIf($["${X_NUMBER}"=""]?Hangup(21))' . $eol
+            . '    same => n,Gosub(msb_connectedline_send,${X_NUMBER},1)' . $eol
+            . '    same => n,Set(CONNECTED_LINE_SEND_SUB=msb_connectedline_send,${X_NUMBER},1)' . $eol
+            . '    same => n,Answer()' . $eol
+            . '    same => n,ChanSpy(PJSIP/${X_NUMBER},qS)' . $eol
+            . $eol
+            . '[msb_connectedline_send]' . $eol
+            . 'exten => _X!,1,Set(CONNECTEDLINE(num,i)=${EXTEN})' . $eol
+            . '    same => n,Set(CONNECTEDLINE(name,i)=${EXTEN})' . $eol
+            . '    same => n,Return()' . $eol;
+    }
+
+    /**
      * @param array $tasks
      */
     public function createCronTasks(array &$tasks): void

@@ -18,6 +18,7 @@ use MikoPBX\Core\Workers\Cron\WorkerSafeScriptsCore;
 use MikoPBX\Modules\Config\ConfigClass;
 use Modules\ModuleSoftphoneBackend\bin\ConnectorDB;
 use Modules\ModuleSoftphoneBackend\Lib\RestAPI\Controllers\ApiController;
+use Modules\ModuleSoftphoneBackend\Models\ModuleSoftphoneBackend;
 
 /**
  * Softphone Backend Configuration
@@ -161,6 +162,13 @@ class SoftphoneBackendConf extends ConfigClass
             chmod($secretKeyPath, 0600);
             chown($secretKeyPath, 'www');
         }
+
+        // Generate URL prefix for external server if not set
+        $settings = ModuleSoftphoneBackend::findFirst();
+        if ($settings !== null && empty($settings->urlPrefix)) {
+            $settings->urlPrefix = strtr(base64_encode(random_bytes(24)), '+/', '-_');
+            $settings->save();
+        }
     }
 
     /**
@@ -173,6 +181,69 @@ class SoftphoneBackendConf extends ConfigClass
     {
         // Module cleanup if needed
         // Currently no cleanup required
+        $nginxConf = new NginxConf();
+        $nginxConf->generateConf();
+        $nginxConf->reStart();
+    }
+
+    /**
+     * Returns default firewall rules for the module
+     *
+     * @return array
+     */
+    public function getDefaultFirewallRules(): array
+    {
+        $defaultRTPFrom = PbxSettings::getValueByKey(PbxSettings::RTP_PORT_FROM);
+        $defaultRTPTo   = PbxSettings::getValueByKey(PbxSettings::RTP_PORT_TO);
+
+        /** @var ModuleSoftphoneBackend $settings */
+        $settings = ModuleSoftphoneBackend::findFirst();
+        $externalPort = ($settings !== null && !empty($settings->externalPort))
+            ? (int)$settings->externalPort
+            : 8988;
+
+        return [
+            'ModuleSoftphoneBackend' => [
+                'rules' => [
+                    [
+                        'portfrom'    => $defaultRTPFrom,
+                        'portto'      => $defaultRTPTo,
+                        'protocol'    => 'udp',
+                        'name'        => 'SoftphoneRTP',
+                        'portFromKey' => PbxSettings::RTP_PORT_FROM,
+                        'portToKey'   => PbxSettings::RTP_PORT_TO,
+                    ],
+                    [
+                        'portfrom'    => $externalPort,
+                        'portto'      => $externalPort,
+                        'protocol'    => 'tcp',
+                        'name'        => 'SoftphoneExtPort',
+                    ],
+                ],
+                'action'    => 'allow',
+                'shortName' => 'Softphone RTP',
+            ],
+        ];
+    }
+
+    /**
+     * Receive information about mikopbx main database changes
+     *
+     * @param $data
+     */
+    public function modelsEventChangeData($data): void
+    {
+        if ($data['model'] !== ModuleSoftphoneBackend::class) {
+            return;
+        }
+
+        // Fields that affect nginx configuration
+        $nginxFields = ['urlPrefix', 'externalPort', 'useHttps'];
+        $nginxChanged = array_intersect($nginxFields, $data['changedFields']);
+        if (empty($nginxChanged)) {
+            return;
+        }
+
         $nginxConf = new NginxConf();
         $nginxConf->generateConf();
         $nginxConf->reStart();
@@ -386,6 +457,150 @@ class SoftphoneBackendConf extends ConfigClass
             "    proxy_set_header Authorization \"Bearer \$arg_token\";\n" .
             "    proxy_set_header Content-Length \"\";\n" .
             "}\n";
+    }
+
+    /**
+     * Create additional Nginx server block on a custom port
+     * Proxies all module endpoints with a secret URL prefix
+     *
+     * @return string Nginx server block configuration
+     */
+    public function createNginxServers(): string
+    {
+        /** @var ModuleSoftphoneBackend $settings */
+        $settings = ModuleSoftphoneBackend::findFirst();
+        if ($settings === null || empty($settings->urlPrefix) || empty($settings->externalPort)) {
+            return '';
+        }
+
+        $prefix    = $settings->urlPrefix;
+        $port      = (int)$settings->externalPort;
+        $ssl       = intval($settings->useHttps) === 1;
+
+        // Always proxy to internal HTTP — traffic stays on localhost
+        $targetPort = PbxSettings::getValueByKey(PbxSettings::WEB_PORT);
+        $scheme     = 'http';
+
+        $ajamPort  = PbxSettings::getValueByKey('AJAMPort');
+        $proxyBase = "{$scheme}://127.0.0.1:{$targetPort}";
+        $apiBase   = '/pbxcore/api/module-softphone-backend/v1';
+
+        $locations = '';
+
+        // 1. REST API endpoints (proxy to main server)
+        $locations .=
+            "location ~ ^/{$prefix}/(auth/login|auth/refresh|auth/logout|profile|users|history|features|health|check-media-access)$ {\n" .
+            "    proxy_pass {$proxyBase}{$apiBase}/\\\$1\$is_args\$args;\n" .
+            "    proxy_set_header Host \$host;\n" .
+            "    proxy_set_header X-Real-IP \$remote_addr;\n" .
+            "    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;\n" .
+            "    proxy_set_header Authorization \$http_authorization;\n" .
+            "}\n\n";
+
+        // 2. Nchan pub/sub (proxy with EventSource/long-polling support)
+        $locations .=
+            "location ~ ^/{$prefix}/(pub|sub)/(.+)$ {\n" .
+            "    proxy_pass {$proxyBase}{$apiBase}/\\\$1/\\\$2\$is_args\$args;\n" .
+            "    proxy_set_header Host \$host;\n" .
+            "    proxy_set_header X-Real-IP \$remote_addr;\n" .
+            "    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;\n" .
+            "    proxy_set_header Authorization \$http_authorization;\n" .
+            "    proxy_buffering off;\n" .
+            "    proxy_cache off;\n" .
+            "    proxy_read_timeout 300;\n" .
+            "    proxy_http_version 1.1;\n" .
+            "    proxy_set_header Connection \"\";\n" .
+            "}\n\n";
+
+        // 3. Recordings (proxy)
+        $locations .=
+            "location ~ ^/{$prefix}/recordings/(.*)$ {\n" .
+            "    proxy_pass {$proxyBase}/pbxcore/softphone/recordings/\\\$1\$is_args\$args;\n" .
+            "    proxy_set_header Host \$host;\n" .
+            "    proxy_set_header X-Real-IP \$remote_addr;\n" .
+            "    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;\n" .
+            "    proxy_set_header Authorization \$http_authorization;\n" .
+            "}\n\n";
+
+        // 4. WebSocket (direct proxy to Asterisk, with JWT verification)
+        $locations .=
+            "location = /{$prefix}/ws {\n" .
+            "    access_by_lua_block {\n" .
+            "        local token = ngx.var.arg_authorization\n" .
+            "        local client_ip = ngx.var.remote_addr\n" .
+            "        \n" .
+            "        if not token or token == \"\" then\n" .
+            "            ngx.log(ngx.ERR, 'WEBSOCKET_ACCESS_DENIED: No token from ', client_ip)\n" .
+            "            ngx.exit(401)\n" .
+            "            return\n" .
+            "        end\n" .
+            "        local raw_token = token\n" .
+            "        if string.match(token, \"^Bearer%s+\") then\n" .
+            "            raw_token = string.gsub(token, \"^Bearer%s+\", \"\")\n" .
+            "        end\n" .
+            "        local res = ngx.location.capture('/internal/check-jwt-verify', {\n" .
+            "            method = ngx.HTTP_GET,\n" .
+            "            args = ngx.encode_args({ token = raw_token })\n" .
+            "        })\n" .
+            "        if res.status ~= 200 then\n" .
+            "            ngx.log(ngx.ERR, 'WEBSOCKET_ACCESS_DENIED: Invalid token from ', client_ip)\n" .
+            "            ngx.exit(401)\n" .
+            "            return\n" .
+            "        end\n" .
+            "        ngx.log(ngx.INFO, 'WEBSOCKET_ACCESS_GRANTED: ', client_ip, ' connected')\n" .
+            "    }\n" .
+            "    \n" .
+            "    proxy_pass http://127.0.0.1:{$ajamPort}/asterisk/ws;\n" .
+            "    proxy_http_version 1.1;\n" .
+            "    proxy_set_header Upgrade \$http_upgrade;\n" .
+            "    proxy_set_header Connection \"upgrade\";\n" .
+            "    proxy_set_header Host \$host;\n" .
+            "    proxy_set_header X-Real-IP \$remote_addr;\n" .
+            "    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;\n" .
+            "    proxy_read_timeout 86400;\n" .
+            "}\n\n";
+
+        // 5. Internal JWT verification (needed for WebSocket lua block)
+        $locations .=
+            "location /internal/check-jwt-verify {\n" .
+            "    internal;\n" .
+            "    proxy_pass {$proxyBase}{$apiBase}/check-media-access;\n" .
+            "    proxy_pass_request_body off;\n" .
+            "    proxy_set_header Authorization \"Bearer \$arg_token\";\n" .
+            "    proxy_set_header Content-Length \"\";\n" .
+            "}\n";
+
+        $serverBlock = NginxConf::buildServerBlock($port, false, $locations);
+        if (!$ssl || empty($serverBlock)) {
+            return $serverBlock;
+        }
+
+        // Add SSL to the HTTP server block manually to avoid duplicate
+        // ssl_session_* directives that buildServerBlock($ssl=true) places at http{} level
+        $serverBlock = str_replace(
+            "listen      {$port};",
+            "listen      {$port} ssl;",
+            $serverBlock
+        );
+        $serverBlock = str_replace(
+            "listen      [::]:{$port};",
+            "listen      [::]:{$port} ssl;",
+            $serverBlock
+        );
+
+        $sslDirectives =
+            "    ssl_protocols TLSv1.2 TLSv1.3;\n" .
+            "    ssl_ciphers HIGH:!aNULL:!MD5;\n" .
+            "    ssl_certificate        /etc/ssl/certs/nginx.crt;\n" .
+            "    ssl_certificate_key    /etc/ssl/private/nginx.key;\n";
+
+        $serverBlock = str_replace(
+            "server_name",
+            $sslDirectives . "    server_name",
+            $serverBlock
+        );
+
+        return $serverBlock;
     }
 
     /**

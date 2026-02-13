@@ -397,6 +397,22 @@ const ModuleSoftphoneBackend = {
 		window[className].$dropDowns.dropdown();
 		window[className].initializeForm();
 		$('.menu .item').tab();
+
+		// Regenerate prefix button
+		$('#regenerate-prefix-btn').on('click', function() {
+			$.api({
+				url: `${globalRootUrl}${idUrl}/regeneratePrefix`,
+				method: 'POST',
+				on: 'now',
+				onSuccess: function(response) {
+					if (response && response.success && response.data && response.data.urlPrefix) {
+						$('input[name="urlPrefix"]').val(response.data.urlPrefix);
+						Form.$submitButton.removeClass('disabled');
+					}
+				}
+			});
+		});
+
 		// Try connect WS if token is already present in DOM
 		window[className].connectContactsWs();
 		window[className].connectActiveCallsWs();

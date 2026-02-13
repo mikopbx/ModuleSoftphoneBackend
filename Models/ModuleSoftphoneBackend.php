@@ -18,22 +18,40 @@ class ModuleSoftphoneBackend extends ModulesModelsBase
 {
     /**
      * @Primary
-     * * @Identity
-     * * @Column(type="integer", nullable=false)
+     * @Identity
+     * @Column(type="integer", nullable=false)
      */
-    public string $id;
+    public $id;
 
     /**
      * Toggle
      *
      * @Column(type="integer", default="0", nullable=true)
      */
-    public string $disabled;
+    public $disabled;
 
     /**
      * @Column(type="string", nullable=true, default="")
      */
-    public string $settings;
+    public $settings;
+
+    /**
+     * External server port
+     * @Column(type="integer", default="8988", nullable=true)
+     */
+    public $externalPort;
+
+    /**
+     * Use HTTPS for external server (0=HTTP, 1=HTTPS)
+     * @Column(type="integer", default="0", nullable=true)
+     */
+    public $useHttps;
+
+    /**
+     * URL prefix for external server access (32+ chars, URL-safe)
+     * @Column(type="string", nullable=true, default="")
+     */
+    public $urlPrefix;
 
     public function initialize(): void
     {

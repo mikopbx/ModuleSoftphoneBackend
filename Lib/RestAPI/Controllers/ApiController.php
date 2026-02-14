@@ -259,43 +259,6 @@ class ApiController extends ModulesControllerBase
 
     /**
      * Protected endpoint example - get user profile
-     * GET /pbxcore/api/module-softphone-backend/v1/users
-     * curl http://localhost/pbxcore/api/module-softphone-backend/v1/users   -H "Authorization: Bearer $ACCESS_TOKEN"
-     * Header: Authorization: Bearer {access_token}
-     */
-    public function getUsers(): void
-    {
-        $this->initialize();
-        $headers = $this->getAuthorizationHeaders();
-
-        if (!$this->authenticateAndCheck($headers)) {
-            $this->sendErrorResponse(401, 'Unauthorized. Token required');
-            return;
-        }
-
-        if (!$this->authProvider->isAccessToken()) {
-            $this->sendErrorResponse(403, 'Invalid token type');
-            return;
-        }
-
-        $userId      = $this->authProvider->getUserId();
-        $credentials = $this->authProvider->getCredentials();
-
-        $response = [
-            'success' => true,
-            'user' => [
-                'id' => $userId,
-                'username' => $credentials['username'] ?? null,
-                'role' => $this->authProvider->getUserRole()
-            ],
-            'statuses' => CacheManager::getCacheData('getUsersStates')
-        ];
-
-        $this->sendResponse($response);
-    }
-
-    /**
-     * Protected endpoint example - get user profile
      * GET /pbxcore/api/module-softphone-backend/v1/history
      * curl http://localhost/pbxcore/api/module-softphone-backend/v1/history   -H "Authorization: Bearer $ACCESS_TOKEN"
      * Header: Authorization: Bearer {access_token}

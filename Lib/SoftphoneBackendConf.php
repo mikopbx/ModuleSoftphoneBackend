@@ -138,7 +138,6 @@ class SoftphoneBackendConf extends ConfigClass
             [ApiController::class, 'checkMediaAccessAction', '/pbxcore/api/module-softphone-backend/v1/check-media-access', 'get', '/', true],
 
             // Protected endpoints (require authentication)
-            [ApiController::class, 'getUsers', '/pbxcore/api/module-softphone-backend/v1/users', 'get', '/', true],
             [ApiController::class, 'getHistory', '/pbxcore/api/module-softphone-backend/v1/history', 'get', '/', true],
             [ApiController::class, 'profileAction', '/pbxcore/api/module-softphone-backend/v1/profile', 'get', '/', true],
             [ApiController::class, 'logoutAction', '/pbxcore/api/module-softphone-backend/v1/auth/logout', 'post', '/', true],
@@ -489,7 +488,7 @@ class SoftphoneBackendConf extends ConfigClass
 
         // 1. REST API endpoints (proxy to main server)
         $locations .=
-            "location ~ ^/{$prefix}/(auth/login|auth/refresh|auth/logout|profile|users|history|features|health|check-media-access)$ {\n" .
+            "location ~ ^/{$prefix}/(auth/login|auth/refresh|auth/logout|profile|history|features|health|check-media-access)$ {\n" .
             "    proxy_pass {$proxyBase}{$apiBase}/\\\$1\$is_args\$args;\n" .
             "    proxy_set_header Host \$host;\n" .
             "    proxy_set_header X-Real-IP \$remote_addr;\n" .

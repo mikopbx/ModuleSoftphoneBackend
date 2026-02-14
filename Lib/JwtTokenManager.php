@@ -40,6 +40,7 @@ class JwtTokenManager
      */
     public function createAccessToken(array $payload): string
     {
+        $payload['jti'] = bin2hex(random_bytes(16));
         $payload['iat'] = time();
         $payload['exp'] = time() + $this->accessTokenExpiry;
         $payload['type'] = 'access';
@@ -52,6 +53,7 @@ class JwtTokenManager
      */
     public function createRefreshToken(array $payload): string
     {
+        $payload['jti'] = bin2hex(random_bytes(16));
         $payload['iat'] = time();
         $payload['exp'] = time() + $this->refreshTokenExpiry;
         $payload['type'] = 'refresh';
@@ -143,12 +145,6 @@ class JwtTokenManager
         $expectedSignature = hash_hmac('sha256', $message, $this->secret, true);
         $expectedSignature = $this->base64UrlEncode($expectedSignature);
         
-        // Debug: Log if signature doesn't match
-        if ($expectedSignature !== $signature) {
-            error_log("JWT Signature mismatch! Expected: " . substr($expectedSignature, 0, 20) . 
-                      "... Got: " . substr($signature, 0, 20) . "... Secret length: " . strlen($this->secret));
-        }
-        
         return hash_equals($expectedSignature, $signature);
     }
 
@@ -176,12 +172,5 @@ class JwtTokenManager
         $this->refreshTokenExpiry = $seconds;
     }
 
-    /**
-     * Get secret key
-     */
-    public function getSecret(): string
-    {
-        return $this->secret;
-    }
 }
 

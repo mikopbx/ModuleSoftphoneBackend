@@ -97,7 +97,8 @@ class ConnectorDB extends WorkerBase
         if($action === 'invoke'){
             $res_data = [];
             $funcName = $data['function']??'';
-            if(method_exists($this, $funcName)){
+            $allowedFunctions = ['startFindClientByPhone'];
+            if(in_array($funcName, $allowedFunctions, true) && method_exists($this, $funcName)){
                 if(count($data['args']) === 0){
                     $res_data = $this->$funcName();
                 }else{

@@ -21,13 +21,13 @@ namespace Modules\ModuleSoftphoneBackend\Lib;
 
 use MikoPBX\Common\Providers\ConfigProvider;
 use MikoPBX\Core\System\Util;
-use Modules\ModuleMonitorActiveCalls\Lib\MikoPBXVersion;
+use Modules\ModuleSoftphoneBackend\Lib\MikoPBXVersion;
 use Phalcon\Cache\Adapter\Redis;
 use Phalcon\Storage\SerializerFactory;
 
 class CacheManager
 {
-    public const REDIS_PREFIX       = 'ModuleMonitorActiveCalls_';
+    public const REDIS_PREFIX       = 'ModuleSoftphoneBackend_';
 
     /**
      * Возвращает адаптер для подключения к Redis.

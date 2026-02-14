@@ -317,7 +317,7 @@ class SoftphoneBackendConf extends ConfigClass
             '    }'.PHP_EOL.
             '}'.PHP_EOL.
             PHP_EOL.
-            'location ~ /pbxcore/api/module-softphone-backend/v1/pub/(.*)$ {'.PHP_EOL."\t".
+            'location ~ /pbxcore/api/module-softphone-backend/v1/pub/([a-z0-9-]+)$ {'.PHP_EOL."\t".
             'nchan_publisher;'.PHP_EOL."\t".
             'allow  127.0.0.1;'.PHP_EOL."\t".
             'deny all;'.PHP_EOL."\t".
@@ -326,7 +326,7 @@ class SoftphoneBackendConf extends ConfigClass
             'nchan_message_timeout 300m;'.PHP_EOL.
             '}'.PHP_EOL.
             PHP_EOL.
-            'location ~ /pbxcore/api/module-softphone-backend/v1/sub/(.*)$ {'.PHP_EOL.
+            'location ~ /pbxcore/api/module-softphone-backend/v1/sub/([a-z0-9-]+)$ {'.PHP_EOL.
             '    nchan_subscriber;'.PHP_EOL.
             '    nchan_channel_id "$1";'.PHP_EOL.
             '    access_by_lua_block {'.PHP_EOL.
@@ -545,7 +545,7 @@ class SoftphoneBackendConf extends ConfigClass
 
         // Nchan subscriber — generic channels (buffer 1, direct without proxy)
         $locations .=
-            "location ~ ^/{$prefix}/sub/(.+)$ {\n" .
+            "location ~ ^/{$prefix}/sub/([a-z0-9-]+)$ {\n" .
             "    nchan_subscriber;\n" .
             "    nchan_channel_id \"\\\$1\";\n" .
             "    nchan_message_buffer_length 1;\n" .

@@ -52,7 +52,7 @@ class ApiController extends ModulesControllerBase
         $headers = $this->getAuthorizationHeaders();
 
         // Проверить JWT
-        if (!$this->authProvider->authenticate($headers)) {
+        if (!$this->authenticateAndCheck($headers)) {
             // Логировать попытку доступа без валидного токена
             $this->logSecurityEvent(
                 'MEDIA_ACCESS_DENIED',
@@ -91,6 +91,17 @@ class ApiController extends ModulesControllerBase
     {
         $this->initialize();
         try {
+            // Rate limiting check
+            $clientIp = $this->request->getClientAddress(true);
+            $rateLimitKey = 'login_attempts_' . md5($clientIp);
+            $attemptsData = CacheManager::getCacheData($rateLimitKey);
+            $attempts = (int)($attemptsData[0] ?? 0);
+            if ($attempts >= SoftphoneBackendConf::MAX_LOGIN_ATTEMPTS) {
+                $this->logSecurityEvent('AUTH_RATE_LIMITED', "Too many login attempts from: {$clientIp}");
+                $this->sendErrorResponse(429, 'Too many login attempts. Please try again later');
+                return;
+            }
+
             $data = $this->request->getJsonRawBody(true);
 
             // Validate input
@@ -107,6 +118,7 @@ class ApiController extends ModulesControllerBase
             $userId = $this->authenticateUser($data['username'], $data['password']);
 
             if (!$userId) {
+                CacheManager::setCacheData($rateLimitKey, $attempts + 1, SoftphoneBackendConf::LOCKOUT_TIME);
                 $this->logSecurityEvent(
                     'AUTH_FAILED',
                     "Failed login attempt for user: {$data['username']}"
@@ -114,10 +126,12 @@ class ApiController extends ModulesControllerBase
                 $this->sendErrorResponse(401, 'Invalid credentials');
                 return;
             }
+            CacheManager::setCacheData($rateLimitKey, 0, 1);
             $response = $this->createLoginResponse($userId, $data['username']);
             $this->sendResponse($response);
         } catch (Throwable $e) {
-            $this->sendErrorResponse(500, 'Internal server error'.$e->getMessage());
+            $this->logSecurityEvent('AUTH_ERROR', 'Login error: ' . $e->getMessage());
+            $this->sendErrorResponse(500, 'Internal server error');
         }
     }
 
@@ -166,7 +180,7 @@ class ApiController extends ModulesControllerBase
         $headers = $this->getAuthorizationHeaders();
 
         // Authenticate with refresh token
-        if (!$this->authProvider->authenticate($headers)) {
+        if (!$this->authenticateAndCheck($headers)) {
             $this->sendErrorResponse(401, 'Invalid or missing token');
             return;
         }
@@ -191,10 +205,15 @@ class ApiController extends ModulesControllerBase
         }
 
         $accessToken = $this->tokenManager->createAccessToken($payload);
+        $refreshToken = $this->tokenManager->createRefreshToken($payload);
+
+        // Blacklist old refresh token
+        $this->blacklistToken($credentials);
 
         $response = [
             'success' => true,
             'access_token' => $accessToken,
+            'refresh_token' => $refreshToken,
             'token_type' => 'Bearer',
             'expires_in' => 3600
         ];
@@ -213,7 +232,7 @@ class ApiController extends ModulesControllerBase
         $this->initialize();
         $headers = $this->getAuthorizationHeaders();
 
-        if (!$this->authProvider->authenticate($headers)) {
+        if (!$this->authenticateAndCheck($headers)) {
             $this->sendErrorResponse(401, 'Unauthorized. Token required');
             return;
         }
@@ -249,7 +268,7 @@ class ApiController extends ModulesControllerBase
         $this->initialize();
         $headers = $this->getAuthorizationHeaders();
 
-        if (!$this->authProvider->authenticate($headers)) {
+        if (!$this->authenticateAndCheck($headers)) {
             $this->sendErrorResponse(401, 'Unauthorized. Token required');
             return;
         }
@@ -286,7 +305,7 @@ class ApiController extends ModulesControllerBase
         $this->initialize();
         $headers = $this->getAuthorizationHeaders();
 
-        if (!$this->authProvider->authenticate($headers)) {
+        if (!$this->authenticateAndCheck($headers)) {
             $this->sendErrorResponse(401, 'Unauthorized. Token required');
             return;
         }
@@ -451,7 +470,7 @@ class ApiController extends ModulesControllerBase
         $this->initialize();
         $headers = $this->getAuthorizationHeaders();
 
-        if (!$this->authProvider->authenticate($headers)) {
+        if (!$this->authenticateAndCheck($headers)) {
             $this->sendErrorResponse(401, 'Unauthorized');
             return;
         }
@@ -480,10 +499,13 @@ class ApiController extends ModulesControllerBase
         $this->initialize();
         $headers = $this->getAuthorizationHeaders();
 
-        if (!$this->authProvider->authenticate($headers)) {
+        if (!$this->authenticateAndCheck($headers)) {
             $this->sendErrorResponse(401, 'Unauthorized');
             return;
         }
+
+        $credentials = $this->authProvider->getCredentials();
+        $this->blacklistToken($credentials);
 
         $userId = $this->authProvider->getUserId();
         $this->logSecurityEvent(
@@ -500,6 +522,44 @@ class ApiController extends ModulesControllerBase
     }
 
     // ==================== HELPER METHODS ====================
+
+    /**
+     * Authenticate request and check token blacklist
+     */
+    private function authenticateAndCheck(array $headers): bool
+    {
+        if (!$this->authProvider->authenticate($headers)) {
+            return false;
+        }
+        return !$this->isTokenBlacklisted();
+    }
+
+    /**
+     * Check if current token is blacklisted (e.g. after logout)
+     */
+    private function isTokenBlacklisted(): bool
+    {
+        $jti = $this->authProvider->getCredentials()['jti'] ?? '';
+        if (empty($jti)) {
+            return false;
+        }
+        $data = CacheManager::getCacheData('blacklist_' . $jti);
+        return !empty($data[0]);
+    }
+
+    /**
+     * Blacklist a token by its jti claim
+     */
+    private function blacklistToken(array $credentials): void
+    {
+        $jti = $credentials['jti'] ?? '';
+        if (empty($jti)) {
+            return;
+        }
+        $exp = $credentials['exp'] ?? 0;
+        $ttl = max($exp - time(), 1);
+        CacheManager::setCacheData('blacklist_' . $jti, 1, $ttl);
+    }
 
     /**
      * Extract authorization headers from request
@@ -528,7 +588,7 @@ class ApiController extends ModulesControllerBase
                 ]
             ];
             $userData = Sip::findFirst($filter);
-            return ($userData)?1:null;
+            return $userData ? (int)$userData->id : null;
         }
 
         return null;
@@ -562,13 +622,15 @@ class ApiController extends ModulesControllerBase
         try {
             if (!is_dir($dataDir)) {
                 Util::mwMkdir($dataDir);
-                error_log("Created directory: " . $dataDir);
             }
-            file_put_contents($secretFile, $secret, LOCK_EX);
-            @chmod($secretFile, 0600);
-            error_log("Secret file created successfully at: " . $secretFile);
+            $written = file_put_contents($secretFile, $secret, LOCK_EX);
+            if ($written === false) {
+                Util::sysLogMsg(__CLASS__, "Failed to persist secret file at: " . $secretFile);
+            } else {
+                @chmod($secretFile, 0600);
+            }
         } catch (Throwable $e) {
-            error_log("Failed to create secret file: " . $e->getMessage());
+            Util::sysLogMsg(__CLASS__, "Secret file error: " . $e->getMessage());
         }
 
         return $secret;

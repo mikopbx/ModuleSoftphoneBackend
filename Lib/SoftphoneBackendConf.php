@@ -497,19 +497,60 @@ class SoftphoneBackendConf extends ConfigClass
             "    proxy_set_header Authorization \$http_authorization;\n" .
             "}\n\n";
 
-        // 2. Nchan pub/sub (proxy with EventSource/long-polling support)
+        // 2. Nchan — JWT verification lua block (shared by subscriber locations)
+        $nchanAuthLua =
+            "    access_by_lua_block {\n" .
+            "        local token = ngx.var.arg_authorization or ngx.var.arg_token or ngx.var.http_authorization\n" .
+            "        local client_ip = ngx.var.remote_addr\n" .
+            "\n" .
+            "        if not token or token == \"\" then\n" .
+            "            ngx.log(ngx.ERR, 'NCHAN_SUB_ACCESS_DENIED: No token from ', client_ip)\n" .
+            "            ngx.exit(401)\n" .
+            "            return\n" .
+            "        end\n" .
+            "\n" .
+            "        local raw_token = token\n" .
+            "        if string.match(token, \"^Bearer%s+\") then\n" .
+            "            raw_token = string.gsub(token, \"^Bearer%s+\", \"\")\n" .
+            "        end\n" .
+            "\n" .
+            "        if not raw_token or raw_token == \"\" then\n" .
+            "            ngx.log(ngx.ERR, 'NCHAN_SUB_ACCESS_DENIED: Empty token from ', client_ip)\n" .
+            "            ngx.exit(401)\n" .
+            "            return\n" .
+            "        end\n" .
+            "\n" .
+            "        local res = ngx.location.capture('/internal/check-jwt-verify', {\n" .
+            "            method = ngx.HTTP_GET,\n" .
+            "            args = ngx.encode_args({ token = raw_token })\n" .
+            "        })\n" .
+            "\n" .
+            "        if res.status ~= 200 then\n" .
+            "            ngx.log(ngx.ERR, 'NCHAN_SUB_ACCESS_DENIED: Invalid token from ', client_ip)\n" .
+            "            ngx.exit(401)\n" .
+            "            return\n" .
+            "        end\n" .
+            "        ngx.log(ngx.INFO, 'NCHAN_SUB_ACCESS_GRANTED: ', client_ip, ' subscribed ', ngx.var.request_uri)\n" .
+            "    }\n";
+
+        // Nchan subscriber — contacts channel (buffer 200, direct without proxy)
         $locations .=
-            "location ~ ^/{$prefix}/(pub|sub)/(.+)$ {\n" .
-            "    proxy_pass {$proxyBase}{$apiBase}/\\\$1/\\\$2\$is_args\$args;\n" .
-            "    proxy_set_header Host \$host;\n" .
-            "    proxy_set_header X-Real-IP \$remote_addr;\n" .
-            "    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;\n" .
-            "    proxy_set_header Authorization \$http_authorization;\n" .
-            "    proxy_buffering off;\n" .
-            "    proxy_cache off;\n" .
-            "    proxy_read_timeout 300;\n" .
-            "    proxy_http_version 1.1;\n" .
-            "    proxy_set_header Connection \"\";\n" .
+            "location = /{$prefix}/sub/contacts {\n" .
+            "    nchan_subscriber;\n" .
+            "    nchan_channel_id \"contacts\";\n" .
+            "    nchan_message_buffer_length 200;\n" .
+            "    nchan_message_timeout 300m;\n" .
+            $nchanAuthLua .
+            "}\n\n";
+
+        // Nchan subscriber — generic channels (buffer 1, direct without proxy)
+        $locations .=
+            "location ~ ^/{$prefix}/sub/(.+)$ {\n" .
+            "    nchan_subscriber;\n" .
+            "    nchan_channel_id \"\\\$1\";\n" .
+            "    nchan_message_buffer_length 1;\n" .
+            "    nchan_message_timeout 300m;\n" .
+            $nchanAuthLua .
             "}\n\n";
 
         // 3. Recordings (proxy)

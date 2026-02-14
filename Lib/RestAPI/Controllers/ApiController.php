@@ -438,9 +438,13 @@ class ApiController extends ModulesControllerBase
             return;
         }
 
+        if (!$this->authProvider->isAccessToken()) {
+            $this->sendErrorResponse(403, 'Invalid token type');
+            return;
+        }
+
         $response = [
             'success' => true,
-            'message' => 'Logged out successfully',
             'data' => [
                 'PBX_FEATURE_PICKUP_EXTEN'      => PbxSettings::getValueByKey('PBXFeaturePickupExten'),
                 'PBX_FEATURE_ATTENDED_TRANSFER' => PbxSettings::getValueByKey('PBXFeatureAttendedTransfer'),

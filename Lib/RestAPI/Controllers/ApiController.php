@@ -488,6 +488,48 @@ class ApiController extends ModulesControllerBase
         $this->sendResponse($response);
     }
 
+    /**
+     * Create a service JWT token for inter-module communication
+     * Called by other modules (e.g. ModuleMonitorActiveCalls) to obtain
+     * tokens for authenticating against ModuleSoftphoneBackend API
+     *
+     * @param string $serviceId The calling module/service identifier
+     * @return array ['success' => bool, 'data' => ['access_token' => ..., 'refresh_token' => ...]]
+     */
+    public static function createServiceToken(string $serviceId): array
+    {
+        try {
+            $conf = new SoftphoneBackendConf();
+            $secretFile = $conf->getSecretKeyPath();
+
+            if (!file_exists($secretFile)) {
+                return ['success' => false, 'data' => []];
+            }
+
+            $secret = trim(file_get_contents($secretFile));
+            if (empty($secret)) {
+                return ['success' => false, 'data' => []];
+            }
+
+            $tokenManager = new JwtTokenManager($secret);
+            $payload = [
+                'sub' => $serviceId,
+                'username' => $serviceId,
+                'role' => 'service'
+            ];
+
+            return [
+                'success' => true,
+                'data' => [
+                    'access_token'  => $tokenManager->createAccessToken($payload),
+                    'refresh_token' => $tokenManager->createRefreshToken($payload),
+                ]
+            ];
+        } catch (Throwable $e) {
+            return ['success' => false, 'data' => []];
+        }
+    }
+
     // ==================== HELPER METHODS ====================
 
     /**

@@ -608,6 +608,12 @@ class SoftphoneBackendConf extends ConfigClass
             "    proxy_pass_request_body off;\n" .
             "    proxy_set_header Authorization \"Bearer \$arg_token\";\n" .
             "    proxy_set_header Content-Length \"\";\n" .
+            "}\n\n";
+
+        // 6. Catch-all: drop connection for unknown locations
+        $locations .=
+            "location / {\n" .
+            "    return 444;\n" .
             "}\n";
 
         $serverBlock = NginxConf::buildServerBlock($port, false, $locations);

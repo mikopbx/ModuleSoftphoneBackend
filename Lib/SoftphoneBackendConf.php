@@ -486,9 +486,33 @@ class SoftphoneBackendConf extends ConfigClass
 
         $locations = '';
 
+        // Server-level security: hide nginx identity from scanners
+        $locations .=
+            "server_tokens off;\n" .
+            "header_filter_by_lua_block { ngx.header[\"Server\"] = nil; }\n" .
+            "add_header Strict-Transport-Security \"max-age=31536000\" always;\n" .
+            "add_header X-Content-Type-Options \"nosniff\" always;\n\n";
+
+        // Error handling: 401 returns clean JSON, all other errors silently drop connection
+        $locations .=
+            "error_page 400 497 403 404 405 408 500 502 503 504 =444 /444_drop;\n" .
+            "error_page 401 /401_json;\n\n" .
+            "location = /444_drop {\n" .
+            "    internal;\n" .
+            "    return 444;\n" .
+            "}\n\n" .
+            "location = /401_json {\n" .
+            "    internal;\n" .
+            "    default_type application/json;\n" .
+            "    return 401 '{\"error\":\"Unauthorized\"}';\n" .
+            "}\n\n";
+
         // 1. REST API endpoints (proxy to main server)
+        // proxy_intercept_errors catches backend 404 (wrong method/route) hiding "MIKO PBX system" identity
         $locations .=
             "location ~ ^/{$prefix}/(auth/login|auth/refresh|auth/logout|profile|history|features|health|check-media-access)$ {\n" .
+            "    proxy_intercept_errors on;\n" .
+            "    error_page 404 =444 /444_drop;\n" .
             "    proxy_pass {$proxyBase}{$apiBase}/\\\$1\$is_args\$args;\n" .
             "    proxy_set_header Host \$host;\n" .
             "    proxy_set_header X-Real-IP \$remote_addr;\n" .
@@ -552,9 +576,11 @@ class SoftphoneBackendConf extends ConfigClass
             $nchanAuthLua .
             "}\n\n";
 
-        // 3. Recordings (proxy)
+        // 3. Recordings (proxy, GET only)
         $locations .=
             "location ~ ^/{$prefix}/recordings/(.*)$ {\n" .
+            "    proxy_intercept_errors on;\n" .
+            "    error_page 404 =444 /444_drop;\n" .
             "    proxy_pass {$proxyBase}/pbxcore/softphone/recordings/\\\$1\$is_args\$args;\n" .
             "    proxy_set_header Host \$host;\n" .
             "    proxy_set_header X-Real-IP \$remote_addr;\n" .
